@@ -8,6 +8,7 @@ import xarray as xr
 from datetime import datetime
 import dtw
 import scipy as scp
+from alive_progress import alive_bar
 
 #http://alexminnaar.com/2014/04/16/Time-Series-Classification-and-Clustering-with-Python.html
 #https://stats.stackexchange.com/questions/131281/dynamic-time-warping-clustering
@@ -33,29 +34,24 @@ def color_interpolation(start, end, steps):
     #assert(len(start) == len(end))
     #everything is less than = 1assert()
     color_slope = tuple([(start[i], (start[i] - end[i])/steps) for i in range(len(start))])
-    pdb.set_trace()
     return lambda step : tuple(slope[0] - (slope[1] * step) for slope in color_slope)
 
 ##visualize the melt dates
-def graph_watershed_data(data, colors=None, show=False, save=True):
-    candidate = data
-    for year_enum in range(candidate.sizes["year"]):
-        year_grid_data = candidate[:, :, year_enum]
-
+def graph_watershed_data(grid_data, colors=None, show=False, save=True, title=None):
         #linearly interpolate for 100 colors 
-        color_quantity = 20
+        color_quantity = 30
         colors_fx = color_interpolation((1, 1, 1), (0, 0, 1), color_quantity)
-        pdb.set_trace()
         colors_list = [colors_fx(x) for x in range(color_quantity)]
-        print(colors_list)
-        colors_bounds = [0 + x * (year_grid_data.max()/color_quantity) for x in range(color_quantity+1)] 
+        colors_bounds = [0 + x * (grid_data.max()/color_quantity) for x in range(color_quantity+1)] 
         cmap = mpl.colors.ListedColormap(colors_list)
         norm = mpl.colors.BoundaryNorm(colors_bounds, cmap.N+1)
 
-        img = plt.imshow(year_grid_data, interpolation='nearest', origin='lower', cmap=cmap, norm=norm)# cmap)
+        img = plt.imshow(grid_data, interpolation='nearest', origin='lower', cmap=cmap, norm=norm)# cmap)
+        if title:
+            plt.title(title)
         #plt.colorbar(img)#, cmap=cmap, norm=norm, boundaries=colors_bounds)
         if save:
-            plt.savefig("watershed_colored_{}.png")
+            plt.savefig(f"watershed_colored_{title}.png")
         if show:
             plt.show()
         plt.clf()
@@ -105,6 +101,7 @@ def clean_swe_matrix():
     valid_grid_day_cnt = 0
     skip_cnt = 0
     nan_coord_year_cutoff = 20
+    data_mask = np.zeros((matrix.shape[2], matrix.shape[3]))
     for year in range(matrix.shape[0]): #iterate over years
         for lat in range(matrix.shape[2]):
             for lon in range(matrix.shape[3]):
@@ -122,6 +119,7 @@ def clean_swe_matrix():
                 interp_vals = scp.interpolate.interp1d(idxs[good_vals], day_list[good_vals], bounds_error=False)
                 day_list = np.where(np.isfinite(day_list), day_list, interp_vals(idxs))
                 if np.isnan(np.sum(day_list)) or np.sum(day_list) < cutoff_swe:
+                    data_mask[lat, lon] = 1
                     print(f'skipped {year} at {lat}-{lon}')
                     skip_cnt += 1
                     continue#skip the grid-cell-day if there is not enough data
@@ -132,6 +130,7 @@ def clean_swe_matrix():
                 #graph_day_coord_swe(day_list, year, lat, lon)
                 #pdb.set_trace()
     np.save("swe_matrix_clean.npy", matrix)
+    np.save("swe_data_mask.npy", data_mask)
     print(valid_grid_day_cnt)
     print(skip_cnt)
 
@@ -148,36 +147,70 @@ def DWT_distance_swe(series_1, series_2):
 
 def compute_swe_distance(distance_fx):
     matrix = np.load("swe_matrix_clean.npy")
+    mask = np.load("swe_data_mask.npy")
+    print(matrix.shape)
     latlon_1d = lambda lat, lon : lat * matrix.shape[2] + lon
-    latlon_2d = lambda latlon1d : (latlon1d % matrix.shape[2], int(latlon1d / matrix.shape[2]))
-    max_1d_latlon_idx = latlon_1d(matrix.shape[2], matrix.shape[3])
-    distance_latlon = np.empty((max_1d_latlon_idx, max_1d_latlon_idx))
-    computed = set()
+    latlon_2d = lambda latlon1d : (int(latlon1d / matrix.shape[2]), latlon1d % matrix.shape[2])
+    pdb.set_trace()
+    #distance_latlon = np.ones((max_1d_latlon_idx, max_1d_latlon_idx)) * 1000
+    distance_latlon = np.ones((matrix.shape[0], matrix.shape[2], matrix.shape[3], matrix.shape[2], matrix.shape[3])) * -1
     for year in range(matrix.shape[0]):
         lat_idx = np.arange(matrix.shape[2])
         lon_idx = np.arange(matrix.shape[3])
 
         grid_cell_year = lambda lat, lon : matrix[year, :, lat, lon]
-
-        for lat_a in lat_idx:
-            for lon_a in lon_idx:
-                for lat_b in lat_idx:
-                    for lon_b in lon_idx:
-                        a_idx = latlon_1d(lat_a, lon_a)
-                        b_idx = latlon_1d(lat_b, lon_b)
-                        if (a_idx, b_idx) not in computed:
-                            distance_latlon[a_idx, b_idx] = \
-                            distance_fx(grid_cell_year(lat_a, lon_a), grid_cell_year(lat_b, lon_b))
-                            computed.add((a_idx, b_idx))
-                            computed.add((b_idx, a_idx))
-        print("YEAR COMPLETED!!!!!!!!")
+        with alive_bar(len(lat_idx) * len(lon_idx)) as bar:
+            for lat_a in lat_idx:
+                for lon_a in lon_idx:
+                    bar()
+                    if mask[lat_a, lon_a]:
+                        continue
+                    for lat_b in lat_idx:
+                        for lon_b in lon_idx:
+                            if mask[lat_b, lon_b]:
+                                continue
+                            distance_latlon[year, lat_a, lon_a, lat_b, lon_b] = distance_fx(grid_cell_year(lat_a, lon_a), grid_cell_year(lat_b, lon_b))
     pdb.set_trace()
     np.save("distance_latlon.npy", distance_latlon)
     pdb.set_trace()
 
 
+def do_clustering():
+    matrix_shape = (17, 366, 19, 10)
+    matrix = np.zeros(matrix_shape)
+    latlon_1d = lambda lat, lon : lat * matrix.shape[2] + lon
+    latlon_2d = lambda latlon1d : (int(latlon1d / (matrix.shape[2])), latlon1d % (matrix.shape[3]))
+    distances = np.load("distance_latlon.npy")
+    mask = np.load("swe_data_mask.npy")
+    for year in range(distances.shape[0]):
+        pdb.set_trace()
+        for lat in range(distances.shape[1]):
+            for lon in range(distances.shape[2]):
+                if not mask[lat, lon]:
+                    graph_watershed_data(distances[year, lat, lon], save=True, show=False, title="{}, {}-{}".format(year, lat, lon))
 
-compute_swe_distance(DWT_distance_swe)
+    
+            
+
+    pdb.set_trace()
+
+    
+    for year in range(distances.shape[0]):
+        sums = np.zeros((19, 10))
+        cnt = 0
+        for lat in range(distances.shape[1]):
+            for lon in range(distances.shape[2]):
+                if not mask[lat, lon]:
+                    sums += distances[year, lat, lon]
+                    cnt += 1
+        average = sums / cnt
+
+
+
+#compute_swe_distance(DWT_distance_swe)
+#clean_swe_matrix()
+do_clustering()
+
         
 
 
