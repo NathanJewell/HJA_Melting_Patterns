@@ -127,8 +127,10 @@ def clean_swe_matrix():
                 matrix[year, :, lat, lon] = (day_list - np.min(day_list)) / (np.max(day_list) - np.min(day_list))
 
                 print(f'!!!Graphed {year} at {lat}-{lon}')
-                #graph_day_coord_swe(day_list, year, lat, lon)
+                if year > 1:
+                    graph_day_coord_swe(matrix[year, :, lat, lon], year, lat, lon)
                 #pdb.set_trace()
+    pdb.set_trace()
     np.save("swe_matrix_clean.npy", matrix)
     np.save("swe_data_mask.npy", data_mask)
     print(valid_grid_day_cnt)
@@ -182,19 +184,43 @@ def do_clustering():
     latlon_2d = lambda latlon1d : (int(latlon1d / (matrix.shape[2])), latlon1d % (matrix.shape[3]))
     distances = np.load("distance_latlon.npy")
     mask = np.load("swe_data_mask.npy")
+    flat_size = distances[0, 0, 0].flatten().shape[0]     
+    flatten = np.empty((matrix.shape[0], flat_size, flat_size)) 
+
+
+    latlon_1d = lambda lat_, lon_ : lat * distances.shape[2] + lon
+    latlon_2d = lambda latlon_ : (latlon_ / distances.shape[2], latlon_ % distances.shape[2])
     for year in range(distances.shape[0]):
-        pdb.set_trace()
+        #pdb.set_trace()
         for lat in range(distances.shape[1]):
             for lon in range(distances.shape[2]):
-                if not mask[lat, lon]:
-                    graph_watershed_data(distances[year, lat, lon], save=True, show=False, title="{}, {}-{}".format(year, lat, lon))
+                flatten[year][latlon_1d(lat, lon)] = distances[year, lat, lon].flatten()
+                #if not mask[lat, lon]:
+                    #graph_watershed_data(distances[year, lat, lon], save=True, show=False, title="{}, {}-{}".format(year, lat, lon))
 
-    
-            
+    from sklearn.cluster import KMeans
+    for year in range(distances.shape[0]):
+        kmeans = KMeans(n_clusters =6, random_state=0).fit(flatten[year])
+        clusters = np.reshape(kmeans.labels_, (19, 10))
+        graph_watershed_data(clusters, save=False, show=True)
 
-    pdb.set_trace()
+        data_matrix = np.load("swe_matrix_clean.npy")
 
-    
+        if year > 1:
+            graph_day_coord_swe(matrix[year, :, lat, lon], "plz", "wtf", "test")
+        for c in range(0,np.max(clusters)+1):
+            cluster_idx = np.where(clusters == c)
+            cluster_data = data_matrix[year, :, cluster_idx[0], cluster_idx[1]]
+            for d in cluster_data: 
+                plt.plot(range(len(d)), d)
+
+            plt.xlabel('Day')
+            plt.ylabel('SWE')
+            plt.title(f'Year {year} - Cluster {c} - {len(cluster_data)}')
+            plt.savefig(f"cluster_graphs/Cluster_{c}_year{year}.png")
+            plt.clf()
+
+
     for year in range(distances.shape[0]):
         sums = np.zeros((19, 10))
         cnt = 0
@@ -208,7 +234,7 @@ def do_clustering():
 
 
 #compute_swe_distance(DWT_distance_swe)
-#clean_swe_matrix()
+clean_swe_matrix()
 do_clustering()
 
         
