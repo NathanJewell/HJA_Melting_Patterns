@@ -9,6 +9,7 @@ from datetime import datetime
 import dtw
 import scipy as scp
 from alive_progress import alive_bar
+import matplotlib.image as mpimage
 
 #http://alexminnaar.com/2014/04/16/Time-Series-Classification-and-Clustering-with-Python.html
 #https://stats.stackexchange.com/questions/131281/dynamic-time-warping-clustering
@@ -38,7 +39,9 @@ def color_interpolation(start, end, steps):
 
 ##visualize the melt dates
 def graph_watershed_data(grid_data, colors=None, show=False, save=True, title=None):
+        grid_data=np.flip(grid_data.T, axis=0)
         #linearly interpolate for 100 colors 
+        topo = mpimage.imread("hja_lidar.png")
         color_quantity = 30
         colors_fx = color_interpolation((1, 1, 1), (0, 0, 1), color_quantity)
         colors_list = [colors_fx(x) for x in range(color_quantity)]
@@ -46,12 +49,14 @@ def graph_watershed_data(grid_data, colors=None, show=False, save=True, title=No
         cmap = mpl.colors.ListedColormap(colors_list)
         norm = mpl.colors.BoundaryNorm(colors_bounds, cmap.N+1)
 
-        img = plt.imshow(grid_data, interpolation='nearest', origin='lower', cmap=cmap, norm=norm)# cmap)
+        extent = 0, grid_data.shape[1], 0, grid_data.shape[0]
+        bg = plt.imshow(topo, cmap='Greys', extent=extent)
+        img = plt.imshow(grid_data, interpolation='nearest', origin='lower', cmap=cmap, norm=norm, alpha=.6, extent=extent)# cmap)
         if title:
             plt.title(title)
         #plt.colorbar(img)#, cmap=cmap, norm=norm, boundaries=colors_bounds)
         if save:
-            plt.savefig(f"watershed_colored_{title}.png")
+            plt.savefig(f"spatial_clusters/watershed_colored_{title}.png")
         if show:
             plt.show()
         plt.clf()
@@ -202,23 +207,24 @@ def do_clustering():
     for year in range(distances.shape[0]):
         kmeans = KMeans(n_clusters =6, random_state=0).fit(flatten[year])
         clusters = np.reshape(kmeans.labels_, (19, 10))
-        graph_watershed_data(clusters, save=False, show=True)
+        graph_watershed_data(clusters, save=True, show=False, title=f"{year}")
 
         data_matrix = np.load("swe_matrix_clean.npy")
 
-        if year > 1:
-            graph_day_coord_swe(matrix[year, :, lat, lon], "plz", "wtf", "test")
-        for c in range(0,np.max(clusters)+1):
-            cluster_idx = np.where(clusters == c)
-            cluster_data = data_matrix[year, :, cluster_idx[0], cluster_idx[1]]
-            for d in cluster_data: 
-                plt.plot(range(len(d)), d)
+        #if year > 1:
+            #pass
+            ##graph_day_coord_swe(matrix[year, :, lat, lon], "plz", "wtf", "test")
+        #for c in range(0,np.max(clusters)+1):
+            #cluster_idx = np.where(clusters == c)
+            #cluster_data = data_matrix[year, :, cluster_idx[0], cluster_idx[1]]
+            #for d in cluster_data: 
+                #plt.plot(range(len(d)), d)
 
-            plt.xlabel('Day')
-            plt.ylabel('SWE')
-            plt.title(f'Year {year} - Cluster {c} - {len(cluster_data)}')
-            plt.savefig(f"cluster_graphs/Cluster_{c}_year{year}.png")
-            plt.clf()
+            #plt.xlabel('Day')
+            #plt.ylabel('SWE')
+            #plt.title(f'Year {year} - Cluster {c} - {len(cluster_data)}')
+            #plt.savefig(f"cluster_graphs/Cluster_{c}_year{year}.png")
+            #plt.clf()
 
 
     for year in range(distances.shape[0]):
@@ -234,7 +240,7 @@ def do_clustering():
 
 
 #compute_swe_distance(DWT_distance_swe)
-clean_swe_matrix()
+#clean_swe_matrix()
 do_clustering()
 
         
