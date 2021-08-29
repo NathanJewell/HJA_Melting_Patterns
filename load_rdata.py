@@ -50,7 +50,7 @@ def graph_watershed_data(grid_data, colors=None, show=False, save=True, title=No
         norm = mpl.colors.BoundaryNorm(colors_bounds, cmap.N+1)
 
         extent = 0, grid_data.shape[1], 0, grid_data.shape[0]
-        bg = plt.imshow(topo, cmap='Greys', extent=extent)
+        #bg = plt.imshow(topo, cmap='Greys', extent=extent)
         img = plt.imshow(grid_data, interpolation='nearest', origin='lower', cmap=cmap, norm=norm, alpha=.6, extent=extent)# cmap)
         if title:
             plt.title(title)
@@ -116,7 +116,7 @@ def clean_swe_matrix():
                     day_list[0] = 0
                 if np.isnan(day_list[-1]):
                     day_list[-1] = 0
-                if lat == 6 and lon == 6:
+                if lat == 6 and lon == 6: #debug
                     pdb.set_trace()
                 idxs = np.arange(day_list.shape[0])
                 day_list[day_list < 0] = np.nan
@@ -207,6 +207,10 @@ def do_clustering():
     for year in range(distances.shape[0]):
         kmeans = KMeans(n_clusters =6, random_state=0).fit(flatten[year])
         clusters = np.reshape(kmeans.labels_, (19, 10))
+        avg_cluster_swe = [0] * len(np.unique(clusters))
+        for lat, lat_row in enumerate(clusters):
+            for lon, cluster_num in enumerate(lat_row):
+        pdb.set_trace()
         graph_watershed_data(clusters, save=True, show=False, title=f"{year}")
 
         data_matrix = np.load("swe_matrix_clean.npy")
