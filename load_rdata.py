@@ -37,18 +37,29 @@ def color_interpolation(start, end, steps):
     color_slope = tuple([(start[i], (start[i] - end[i])/steps) for i in range(len(start))])
     return lambda step : tuple(slope[0] - (slope[1] * step) for slope in color_slope)
 
+import colorsys
+def color_discretization(num_colors, min_hue = .1, max_hue = .8, saturation=.8, value=.5):
+    color_list = [] 
+    for x in range(num_colors):
+        hue = (float(x)/(num_colors))*(max_hue-min_hue) + min_hue
+        color = colorsys.hsv_to_rgb(hue, saturation, value)
+        color_list.append(color)
+    
+    return color_list
+
 ##visualize the melt dates
 def graph_watershed_data(grid_data, colors=None, show=False, save=True, title=None):
         grid_data=np.flip(grid_data.T, axis=0)
         #linearly interpolate for 100 colors 
         topo = mpimage.imread("hja_lidar.png")
-        color_quantity = 30
-        colors_fx = color_interpolation((1, 1, 1), (0, 0, 1), color_quantity)
-        colors_list = [colors_fx(x) for x in range(color_quantity)]
+        color_quantity = len(np.unique(grid_data))
+        
+        #colors_fx = color_interpolation((1, 1, 1), (0, 0, 1), color_quantity)
+        #colors_list = [colors_fx(x) for x in range(color_quantity)]
+        colors_list = color_discretization(color_quantity)
         colors_bounds = [0 + x * (grid_data.max()/color_quantity) for x in range(color_quantity+1)] 
         cmap = mpl.colors.ListedColormap(colors_list)
         norm = mpl.colors.BoundaryNorm(colors_bounds, cmap.N+1)
-
         extent = 0, grid_data.shape[1], 0, grid_data.shape[0]
         #bg = plt.imshow(topo, cmap='Greys', extent=extent)
         img = plt.imshow(grid_data, interpolation='nearest', origin='lower', cmap=cmap, norm=norm, alpha=.6, extent=extent)# cmap)
@@ -100,6 +111,7 @@ def load_swe_csv():
 cutoff_swe = .1 
 def clean_swe_matrix():
     matrix = np.load("swe_matrix.npy")
+    peak_matrix = np.zeros((matrix.shape[0], matrix.shape[2], matrix.shape[3]))
     matrix_max = np.max(matrix)
     matrix_min = np.min(matrix)
     pdb.set_trace()
@@ -116,8 +128,8 @@ def clean_swe_matrix():
                     day_list[0] = 0
                 if np.isnan(day_list[-1]):
                     day_list[-1] = 0
-                if lat == 6 and lon == 6: #debug
-                    pdb.set_trace()
+                #if lat == 6 and lon == 6: #debug
+                    #pdb.set_trace()
                 idxs = np.arange(day_list.shape[0])
                 day_list[day_list < 0] = np.nan
                 good_vals = np.isfinite(day_list)
@@ -129,14 +141,15 @@ def clean_swe_matrix():
                     skip_cnt += 1
                     continue#skip the grid-cell-day if there is not enough data
                 valid_grid_day_cnt += 1
+                peak_matrix[year, lat, lon] = np.max(day_list)
                 matrix[year, :, lat, lon] = (day_list - np.min(day_list)) / (np.max(day_list) - np.min(day_list))
 
-                print(f'!!!Graphed {year} at {lat}-{lon}')
-                if year > 1:
-                    graph_day_coord_swe(matrix[year, :, lat, lon], year, lat, lon)
+                #print(f'!!!Graphed {year} at {lat}-{lon}')
+                #if year > 1:
+                    #graph_day_coord_swe(matrix[year, :, lat, lon], year, lat, lon)
                 #pdb.set_trace()
-    pdb.set_trace()
     np.save("swe_matrix_clean.npy", matrix)
+    np.save("peak_matrix_clean.npy", peak_matrix)
     np.save("swe_data_mask.npy", data_mask)
     print(valid_grid_day_cnt)
     print(skip_cnt)
@@ -158,7 +171,6 @@ def compute_swe_distance(distance_fx):
     print(matrix.shape)
     latlon_1d = lambda lat, lon : lat * matrix.shape[2] + lon
     latlon_2d = lambda latlon1d : (int(latlon1d / matrix.shape[2]), latlon1d % matrix.shape[2])
-    pdb.set_trace()
     #distance_latlon = np.ones((max_1d_latlon_idx, max_1d_latlon_idx)) * 1000
     distance_latlon = np.ones((matrix.shape[0], matrix.shape[2], matrix.shape[3], matrix.shape[2], matrix.shape[3])) * -1
     for year in range(matrix.shape[0]):
@@ -204,15 +216,22 @@ def do_clustering():
                     #graph_watershed_data(distances[year, lat, lon], save=True, show=False, title="{}, {}-{}".format(year, lat, lon))
 
     from sklearn.cluster import KMeans
+    peak_matrix = np.load("peak_matrix_clean.npy")
     for year in range(distances.shape[0]):
         kmeans = KMeans(n_clusters =6, random_state=0).fit(flatten[year])
         clusters = np.reshape(kmeans.labels_, (19, 10))
-        avg_cluster_swe = [0] * len(np.unique(clusters))
-        for lat, lat_row in enumerate(clusters):
-            for lon, cluster_num in enumerate(lat_row):
-        pdb.set_trace()
-        graph_watershed_data(clusters, save=True, show=False, title=f"{year}")
+        avg_cluster_peak = [0] * len(np.unique(clusters))
+        for cluster_label in np.unique(clusters):
+            avg_cluster_peak[cluster_label] = np.average(peak_matrix[year][np.where(clusters == cluster_label)])
 
+        reordered = sorted(list(enumerate(avg_cluster_peak)), key=lambda x : x[1])
+        clusters_ordered = np.zeros(clusters.shape, dtype=np.int32)
+        for new_label, old_label in enumerate(reordered):
+            clusters_ordered[np.where(clusters == old_label[0])] = new_label
+        
+        graph_watershed_data(clusters_ordered, save=True, show=False, title=f"{year}")
+
+        np.savetxt(f"spatial_clusters_data/clusters_year_{year}.csv", clusters_ordered.T, delimiter=',')
         data_matrix = np.load("swe_matrix_clean.npy")
 
         #if year > 1:
