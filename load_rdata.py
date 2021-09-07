@@ -31,6 +31,10 @@ import matplotlib.image as mpimage
 
 
 #start, end are rgb tuples between 
+watershed_list = ["coal", "hja", "sagehen"]
+watershed = "hja"
+
+wsdir = lambda filepath : f"watersheds/{watershed}/{filepath}"
 def color_interpolation(start, end, steps):
     #assert(len(start) == len(end))
     #everything is less than = 1assert()
@@ -67,7 +71,7 @@ def graph_watershed_data(grid_data, colors=None, show=False, save=True, title=No
             plt.title(title)
         #plt.colorbar(img)#, cmap=cmap, norm=norm, boundaries=colors_bounds)
         if save:
-            plt.savefig(f"spatial_clusters/watershed_colored_{title}.png")
+            plt.savefig(wsdir(f"spatial_clusters/watershed_colored_{title}.png"))
         if show:
             plt.show()
         plt.clf()
@@ -81,11 +85,10 @@ def graph_day_coord_swe(swe_array, year='year', lat='lat', lon='lon'):
     plt.clf()
 
 def load_swe_csv():
-    df_raw = pd.read_csv("swe_matrix.csv")
+    df_raw = pd.read_csv(wsdir(f"{watershed}_swe_matrix.csv"))
     #change date to epoch or day
 
     #
-    pdb.set_trace()
     water_year_month_cutoff = 10
     water_year_start_date = lambda year : datetime.strptime(f"{year}-10-01")
     #df_raw['date'] = df_raw.apply(lambda row: datetime.strptime(row['date'], "%Y-%m-%d"))
@@ -98,7 +101,7 @@ def load_swe_csv():
     pdb.set_trace()
     xrt = xr.DataArray(df_raw).unstack("dim_0")
     matrix = xrt.values[0].T
-    np.save("swe_matrix.npy", matrix)
+    np.save(wsdir("swe_matrix.npy"), matrix)
 
 #dim ordering is (year, day, lat, lon)
 #nan values need to be eliminated
@@ -110,7 +113,7 @@ def load_swe_csv():
     
 cutoff_swe = .1 
 def clean_swe_matrix():
-    matrix = np.load("swe_matrix.npy")
+    matrix = np.load(wsdir(f"swe_matrix.npy"))
     peak_matrix = np.zeros((matrix.shape[0], matrix.shape[2], matrix.shape[3]))
     matrix_max = np.max(matrix)
     matrix_min = np.min(matrix)
@@ -148,9 +151,9 @@ def clean_swe_matrix():
                 #if year > 1:
                     #graph_day_coord_swe(matrix[year, :, lat, lon], year, lat, lon)
                 #pdb.set_trace()
-    np.save("swe_matrix_clean.npy", matrix)
-    np.save("peak_matrix_clean.npy", peak_matrix)
-    np.save("swe_data_mask.npy", data_mask)
+    np.save(wsdir(f"swe_matrix_clean.npy"), matrix)
+    np.save(wsdir(f"peak_matrix_clean.npy"), peak_matrix)
+    np.save(wsdir(f"swe_data_mask.npy"), data_mask)
     print(valid_grid_day_cnt)
     print(skip_cnt)
 
@@ -166,8 +169,8 @@ def DWT_distance_swe(series_1, series_2):
     return result.distance
 
 def compute_swe_distance(distance_fx):
-    matrix = np.load("swe_matrix_clean.npy")
-    mask = np.load("swe_data_mask.npy")
+    matrix = np.load(wsdir("swe_matrix_clean.npy"))
+    mask = np.load(wsdir("swe_data_mask.npy"))
     print(matrix.shape)
     latlon_1d = lambda lat, lon : lat * matrix.shape[2] + lon
     latlon_2d = lambda latlon1d : (int(latlon1d / matrix.shape[2]), latlon1d % matrix.shape[2])
@@ -190,17 +193,17 @@ def compute_swe_distance(distance_fx):
                                 continue
                             distance_latlon[year, lat_a, lon_a, lat_b, lon_b] = distance_fx(grid_cell_year(lat_a, lon_a), grid_cell_year(lat_b, lon_b))
     pdb.set_trace()
-    np.save("distance_latlon.npy", distance_latlon)
+    np.save(wsdir("distance_latlon.npy"), distance_latlon)
     pdb.set_trace()
 
 
 def do_clustering():
-    matrix_shape = (17, 366, 19, 10)
+    mask = np.load(wsdir("swe_data_mask.npy"))
+    matrix_shape = (17, 366, mask.shape[0], mask.shape[1])
     matrix = np.zeros(matrix_shape)
     latlon_1d = lambda lat, lon : lat * matrix.shape[2] + lon
     latlon_2d = lambda latlon1d : (int(latlon1d / (matrix.shape[2])), latlon1d % (matrix.shape[3]))
-    distances = np.load("distance_latlon.npy")
-    mask = np.load("swe_data_mask.npy")
+    distances = np.load(wsdir("distance_latlon.npy"))
     flat_size = distances[0, 0, 0].flatten().shape[0]     
     flatten = np.empty((matrix.shape[0], flat_size, flat_size)) 
 
@@ -216,10 +219,10 @@ def do_clustering():
                     #graph_watershed_data(distances[year, lat, lon], save=True, show=False, title="{}, {}-{}".format(year, lat, lon))
 
     from sklearn.cluster import KMeans
-    peak_matrix = np.load("peak_matrix_clean.npy")
+    peak_matrix = np.load(wsdir("peak_matrix_clean.npy"))
     for year in range(distances.shape[0]):
         kmeans = KMeans(n_clusters =6, random_state=0).fit(flatten[year])
-        clusters = np.reshape(kmeans.labels_, (19, 10))
+        clusters = np.reshape(kmeans.labels_, (matrix_shape[2], matrix_shape[3]))
         avg_cluster_peak = [0] * len(np.unique(clusters))
         for cluster_label in np.unique(clusters):
             avg_cluster_peak[cluster_label] = np.average(peak_matrix[year][np.where(clusters == cluster_label)])
@@ -231,8 +234,8 @@ def do_clustering():
         
         graph_watershed_data(clusters_ordered, save=True, show=False, title=f"{year}")
 
-        np.savetxt(f"spatial_clusters_data/clusters_year_{year}.csv", clusters_ordered.T, delimiter=',')
-        data_matrix = np.load("swe_matrix_clean.npy")
+        np.savetxt(wsdir(f"spatial_clusters_data/clusters_year_{year}.csv"), clusters_ordered.T, delimiter=',')
+        data_matrix = np.load(wsdir("swe_matrix_clean.npy"))
 
         #if year > 1:
             #pass
@@ -251,7 +254,7 @@ def do_clustering():
 
 
     for year in range(distances.shape[0]):
-        sums = np.zeros((19, 10))
+        sums = np.zeros((matrix_shape[2], matrix_shape[3]))
         cnt = 0
         for lat in range(distances.shape[1]):
             for lon in range(distances.shape[2]):
@@ -264,7 +267,13 @@ def do_clustering():
 
 #compute_swe_distance(DWT_distance_swe)
 #clean_swe_matrix()
-do_clustering()
+#do_clustering()
+for ws in watershed_list:
+    watershed = ws
+    #load_swe_csv()
+    #clean_swe_matrix()
+    #compute_swe_distance(DWT_distance_swe)
+    do_clustering()
 
         
 
