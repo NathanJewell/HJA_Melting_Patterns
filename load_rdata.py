@@ -260,7 +260,7 @@ def do_clustering():
         plt.xlabel('Day')
         plt.ylabel('SWE')
         plt.title(f'{np.max(clusters)} Clusters')
-        plt.savefig(wsdir(f"/Cluster_Means.png"))
+        plt.savefig(wsdir(f"/Cluster_Means_Year{year}.png"))
         plt.clf()
 
 
