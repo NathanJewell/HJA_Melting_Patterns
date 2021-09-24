@@ -217,12 +217,39 @@ def do_clustering():
                 flatten[year][latlon_1d(lat, lon)] = distances[year, lat, lon].flatten()
                 #if not mask[lat, lon]:
                     #graph_watershed_data(distances[year, lat, lon], save=True, show=False, title="{}, {}-{}".format(year, lat, lon))
+    #this can def be numpy one liner if i figured out the right axis
+    for y in range(flatten.shape[0]):
+        flatten[y] = (flatten[y] - np.min(flatten[y])) / (np.max(flatten[y]) - np.min(flatten[y]))
+    #print(f"{watershed}")
+    #avg_quartile= []
+    #for y in range(flatten.shape[0]):
+        #where = np.sort(flatten[y][np.where(flatten[y] >= 0)])
+        #q1 = np.quantile(where, .25)
+        #q2 = np.quantile(where, .5)
+        #q3 = np.quantile(where, .75)
+        #q  4 = np.quantile(where, 1)
+        #print(f"\tYear {y}")#:\n\tstd: {np.std(where)}\n\tavg: {np.std(where)}")
+        ##print(f"min: {np.min(where)}\tmax:{np.max(where)}")
+        ##print(f"q1:{q1}\tq2:{q2}\tq3:{q3}")
+        #print(f"\t\tdiff:{q3-q1}")
+        #avg_quartile.append(q3-q1)
 
-    from sklearn.cluster import KMeans
+    #print(f"--MEAN DIFF IS: {np.mean(avg_quartile)}")
+    #return
+
+    from sklearn.cluster import KMeans, AffinityPropagation, AgglomerativeClustering
+    from yellowbrick.cluster import KElbowVisualizer
     peak_matrix = np.load(wsdir("peak_matrix_clean.npy"))
     for year in range(distances.shape[0]):
-        kmeans = KMeans(n_clusters =6, random_state=0).fit(flatten[year])
-        clusters = np.reshape(kmeans.labels_, (matrix_shape[2], matrix_shape[3]))
+        #cluster_result = AgglomerativeClustering().fit(flatten[year])
+        model = KMeans()
+        visualizer = KElbowVisualizer(model, k=(2, 20))
+        visualizer.fit(flatten[year])
+        #visualizer.show()
+        print(visualizer.elbow_value_)
+        cluster_result = KMeans(n_clusters =visualizer.elbow_value_, random_state=0).fit(flatten[year])
+
+        clusters = np.reshape(cluster_result.labels_, (matrix_shape[2], matrix_shape[3]))
         avg_cluster_peak = [0] * len(np.unique(clusters))
         for cluster_label in np.unique(clusters):
             avg_cluster_peak[cluster_label] = np.average(peak_matrix[year][np.where(clusters == cluster_label)])
