@@ -309,9 +309,9 @@ def do_clustering():
 #do_clustering()
 for ws in watershed_list:
     watershed = ws
-    #load_swe_csv()
-    #clean_swe_matrix()
-    #compute_swe_distance(DWT_distance_swe)
+    load_swe_csv()
+    clean_swe_matrix()
+    compute_swe_distance(DWT_distance_swe)
     do_clustering()
 
         
